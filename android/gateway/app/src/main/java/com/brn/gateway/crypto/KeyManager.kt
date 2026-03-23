@@ -12,6 +12,7 @@ import java.security.KeyPairGenerator
 import java.security.KeyStore
 import java.security.MessageDigest
 import java.security.Signature
+import java.security.spec.ECGenParameterSpec
 
 class KeyManager(
     private val context: Context,
@@ -26,7 +27,7 @@ class KeyManager(
     fun signRegistrationPayload(payload: ByteArray): String {
         val keyStore = ensureIdentityKey()
         val privateKey = keyStore.getKey(IDENTITY_ALIAS, null)
-        val signature = Signature.getInstance("Ed25519")
+        val signature = Signature.getInstance("SHA256withECDSA")
         signature.initSign(privateKey as java.security.PrivateKey)
         signature.update(payload)
         return Base64.encodeToString(signature.sign(), Base64.NO_WRAP)
@@ -74,12 +75,20 @@ class KeyManager(
 
     private fun ensureIdentityKey(): KeyStore {
         val keyStore = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
+        if (keyStore.containsAlias(LEGACY_IDENTITY_ALIAS)) {
+            keyStore.deleteEntry(LEGACY_IDENTITY_ALIAS)
+        }
         if (!keyStore.containsAlias(IDENTITY_ALIAS)) {
-            val generator = KeyPairGenerator.getInstance("Ed25519", "AndroidKeyStore")
+            val generator = KeyPairGenerator.getInstance(
+                KeyProperties.KEY_ALGORITHM_EC, "AndroidKeyStore"
+            )
             val spec = KeyGenParameterSpec.Builder(
                 IDENTITY_ALIAS,
                 KeyProperties.PURPOSE_SIGN or KeyProperties.PURPOSE_VERIFY
-            ).setDigests(KeyProperties.DIGEST_NONE).build()
+            )
+                .setAlgorithmParameterSpec(ECGenParameterSpec("secp256r1"))
+                .setDigests(KeyProperties.DIGEST_SHA256)
+                .build()
             generator.initialize(spec)
             generator.generateKeyPair()
         }
@@ -103,6 +112,7 @@ class KeyManager(
     }
 
     companion object {
-        private const val IDENTITY_ALIAS = "brn-identity-ed25519"
+        private const val IDENTITY_ALIAS = "brn-identity-ec-p256"
+        private const val LEGACY_IDENTITY_ALIAS = "brn-identity-ed25519"
     }
 }
