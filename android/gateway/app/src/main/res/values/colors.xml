@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- BRN brand palette -->
+    <color name="brn_primary">#FF1B6B</color>
+    <color name="brn_primary_dark">#C01456</color>
+    <color name="brn_primary_light">#FF5C8D</color>
+    <color name="brn_accent">#45CAFF</color>
+    <color name="brn_accent_dark">#0097CC</color>
+    <color name="brn_background">#0D1117</color>
+    <color name="brn_surface">#161B22</color>
+    <color name="brn_surface_elevated">#21262D</color>
+    <color name="brn_on_primary">#FFFFFF</color>
+    <color name="brn_on_background">#E6EDF3</color>
+    <color name="brn_on_surface">#C9D1D9</color>
+    <color name="brn_on_surface_dim">#8B949E</color>
+    <color name="brn_success">#3FB950</color>
+    <color name="brn_error">#F85149</color>
+    <color name="brn_warning">#D29922</color>
+    <color name="brn_divider">#30363D</color>
+    <color name="brn_status_bar">#010409</color>
+    <color name="brn_button_start">#238636</color>
+    <color name="brn_button_start_pressed">#2EA043</color>
+    <color name="brn_button_stop">#DA3633</color>
+    <color name="brn_button_stop_pressed">#F85149</color>
+</resources>

@@ -98,11 +98,11 @@ class GoBackendWireGuardEngine(
         return Config.parse(ByteArrayInputStream(configText.toByteArray(StandardCharsets.UTF_8)))
     }
 
-    private class ManagedTunnel(val name: String) : Tunnel {
+    private class ManagedTunnel(private val tunnelName: String) : Tunnel {
         @Volatile
         private var state: Tunnel.State = Tunnel.State.DOWN
 
-        override fun getName(): String = name
+        override fun getName(): String = tunnelName
 
         override fun onStateChange(newState: Tunnel.State) {
             state = newState
