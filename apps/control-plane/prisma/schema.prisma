@@ -1,0 +1,135 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum NodeType {
+  GATEWAY
+  CLIENT
+}
+
+enum NodeStatus {
+  PENDING
+  ACTIVE
+  DEGRADED
+  OFFLINE
+  BLOCKED
+}
+
+enum SessionStatus {
+  PENDING_GATEWAY
+  ACTIVE
+  ENDED
+  BLOCKED
+}
+
+enum RoutingMode {
+  FULL
+  SELECTIVE
+}
+
+enum TransportMode {
+  UDP
+  TCP_FALLBACK
+  AUTO
+}
+
+model Node {
+  id                   String          @id @default(cuid())
+  type                 NodeType
+  identityPublicKey    String          @unique
+  wireguardPublicKey   String
+  fingerprintHash      String
+  ipAddress            String?
+  location             String?
+  status               NodeStatus      @default(PENDING)
+  lastSeenAt           DateTime?
+  heartbeatIntervalSec Int             @default(30)
+  currentPublicIp      String?
+  networkType          String?
+  loadFactor           Int             @default(0)
+  capabilities         Json?
+  createdAt            DateTime        @default(now())
+  updatedAt            DateTime        @updatedAt
+  clientSessions       Session[]       @relation("ClientSessions")
+  gatewaySessions      Session[]       @relation("GatewaySessions")
+  usage                Usage[]
+  paymentAccounts      PaymentAccount[]
+}
+
+model Session {
+  id                String        @id @default(cuid())
+  clientId          String
+  gatewayId         String
+  client            Node          @relation("ClientSessions", fields: [clientId], references: [id])
+  gateway           Node          @relation("GatewaySessions", fields: [gatewayId], references: [id])
+  bytesTransferred  BigInt        @default(0)
+  startTime         DateTime      @default(now())
+  endedAt           DateTime?
+  status            SessionStatus @default(PENDING_GATEWAY)
+  routingMode       RoutingMode
+  transportMode     TransportMode
+  requestedCidrs    String[]
+  requestedDomains  String[]
+  clientTunnelIp    String?
+  gatewayTunnelIp   String?
+  dataCapMb         Int
+  terminationReason String?
+  clientRelayToken  String?
+  gatewayRelayToken String?
+  usage             Usage[]
+
+  @@index([gatewayId, status])
+  @@index([clientId, status])
+}
+
+model Usage {
+  id        String   @id @default(cuid())
+  nodeId    String
+  sessionId String
+  node      Node     @relation(fields: [nodeId], references: [id])
+  session   Session  @relation(fields: [sessionId], references: [id])
+  dataUsed  BigInt
+  bytesUp   BigInt
+  bytesDown BigInt
+  timestamp DateTime @default(now())
+
+  @@index([nodeId, timestamp])
+  @@index([sessionId, timestamp])
+}
+
+model RegistrationNonce {
+  id                String   @id @default(cuid())
+  identityPublicKey String
+  nonce             String
+  createdAt         DateTime @default(now())
+
+  @@unique([identityPublicKey, nonce])
+}
+
+model BlacklistRule {
+  id        String   @id @default(cuid())
+  value     String   @unique
+  kind      String
+  reason    String?
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model PaymentAccount {
+  id         String   @id @default(cuid())
+  nodeId     String
+  provider   String
+  accountRef String
+  credits    Int      @default(0)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  node       Node     @relation(fields: [nodeId], references: [id])
+
+  @@index([nodeId, provider])
+}

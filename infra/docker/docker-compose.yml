@@ -1,0 +1,54 @@
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: brn
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+
+  control-plane:
+    build:
+      context: ../..
+      dockerfile: infra/docker/control-plane.Dockerfile
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/brn
+      BRN_JWT_SECRET: local-dev-jwt-secret-local-dev-jwt-secret
+      BRN_SESSION_SECRET: local-dev-session-secret-local-dev-session-secret
+      BRN_RELAY_USAGE_SECRET: local-dev-usage-secret-local-dev-usage-secret
+      RELAY_UDP_ENDPOINT: localhost:51820
+      RELAY_TCP_ENDPOINT: localhost:8443
+      NODE_HEARTBEAT_INTERVAL_SEC: 30
+      NODE_STALE_AFTER_SEC: 90
+      DEFAULT_SESSION_CAP_MB: 1024
+      MAX_SESSION_CAP_MB: 2048
+      BLACKLIST_VERSION: dev
+    depends_on:
+      - postgres
+    ports:
+      - "3000:3000"
+
+  relay:
+    build:
+      context: ../..
+      dockerfile: infra/docker/relay.Dockerfile
+    environment:
+      BRN_SESSION_SECRET: local-dev-session-secret-local-dev-session-secret
+      BRN_RELAY_USAGE_SECRET: local-dev-usage-secret-local-dev-usage-secret
+      BRN_CONTROL_PLANE_USAGE_URL: http://control-plane:3000/api/billing/usage
+      BRN_RELAY_BIND_UDP: :51820
+      BRN_RELAY_BIND_TCP: :8443
+      BRN_RELAY_METRICS_ADDR: :9090
+      BRN_RELAY_IDLE_TIMEOUT_SEC: 90
+    depends_on:
+      - control-plane
+    ports:
+      - "51820:51820/udp"
+      - "8443:8443"
+      - "9090:9090"
+
+volumes:
+  postgres-data:

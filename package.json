@@ -1,0 +1,12 @@
+{
+  "name": "brn",
+  "private": true,
+  "packageManager": "pnpm@10.11.0",
+  "scripts": {
+    "dev:control-plane": "corepack pnpm --dir apps/control-plane dev",
+    "build:control-plane": "corepack pnpm --dir apps/control-plane build",
+    "prisma:generate": "corepack pnpm --dir apps/control-plane prisma generate",
+    "test:go": "go test ./packages/go/brnproto/... ./services/relay/... ./clients/cli/... ./tests/tooling/...",
+    "test:relay": "go test ./services/relay/..."
+  }
+}

@@ -1,0 +1,88 @@
+# ===========================
+# OS
+# ===========================
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# ===========================
+# Editors / IDEs
+# ===========================
+.idea/
+.vscode/
+*.iml
+*.sublime-project
+*.sublime-workspace
+*.swp
+*.swo
+*~
+
+# ===========================
+# Environment / Secrets
+# ===========================
+.env
+.env.local
+.env.*.local
+*.pem
+
+# ===========================
+# Node.js / pnpm
+# ===========================
+node_modules/
+.pnpm-store/
+dist/
+.next/
+.turbo/
+.eslintcache
+*.tsbuildinfo
+
+# ===========================
+# Go
+# ===========================
+bin/
+out/
+go.work.sum
+.gocache/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+
+# ===========================
+# Android / Gradle
+# ===========================
+.gradle/
+android/**/build/
+android/gateway/local.properties
+*.apk
+*.aab
+*.dex
+*.class
+*.jar
+
+# ===========================
+# Prisma
+# ===========================
+apps/control-plane/prisma/dev.db
+apps/control-plane/prisma/dev.db-journal
+
+# ===========================
+# Docker
+# ===========================
+.docker/
+
+# ===========================
+# Deployment
+# ===========================
+.vercel/
+.netlify/
+
+# ===========================
+# Tests / Logs / Misc
+# ===========================
+coverage/
+*.log
+.cache/
