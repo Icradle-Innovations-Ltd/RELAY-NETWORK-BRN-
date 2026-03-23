@@ -25,7 +25,13 @@ data class RegistrationResult(
 data class AssignedSession(
     val sessionId: String,
     val relayToken: String,
-    val relay: RelayDescriptor
+    val relay: RelayDescriptor,
+    val clientTunnelIp: String?,
+    val gatewayTunnelIp: String?,
+    val clientWireguardPublicKey: String?,
+    val gatewayWireguardPublicKey: String?,
+    val transportMode: String,
+    val routingMode: String
 )
 
 data class HeartbeatResult(
@@ -86,14 +92,14 @@ class ControlPlaneApi(
         )
     }
 
-    fun heartbeat(token: String, networkType: String, relayHealthy: Boolean): HeartbeatResult {
+    fun heartbeat(token: String, networkType: String, relayHealthy: Boolean, activeSessions: Int): HeartbeatResult {
         val payload = JSONObject().apply {
             put("status", if (relayHealthy) "ACTIVE" else "DEGRADED")
-            put("activeSessions", 0)
+            put("activeSessions", activeSessions)
             put("relayHealthy", relayHealthy)
             put("networkType", networkType)
             put("currentPublicIp", JSONObject.NULL)
-            put("loadFactor", 0)
+            put("loadFactor", activeSessions.coerceAtMost(100))
             put("appVersion", "0.1.0")
         }
 
@@ -106,7 +112,13 @@ class ControlPlaneApi(
             sessions += AssignedSession(
                 sessionId = item.getString("sessionId"),
                 relayToken = item.getString("relayToken"),
-                relay = RelayDescriptor(relay.getString("udpEndpoint"), relay.getString("tcpEndpoint"))
+                relay = RelayDescriptor(relay.getString("udpEndpoint"), relay.getString("tcpEndpoint")),
+                clientTunnelIp = item.optString("clientTunnelIp", null),
+                gatewayTunnelIp = item.optString("gatewayTunnelIp", null),
+                clientWireguardPublicKey = item.optString("clientWireguardPublicKey", null),
+                gatewayWireguardPublicKey = item.optString("gatewayWireguardPublicKey", null),
+                transportMode = item.optString("transportMode", "AUTO"),
+                routingMode = item.optString("routingMode", "FULL")
             )
         }
         return HeartbeatResult(
@@ -131,7 +143,7 @@ class ControlPlaneApi(
         }
 
         val code = connection.responseCode
-        val stream = if (code in 200..299) connection.inputStream else connection.errorStream
+        val stream = if (code in 200..299) connection.inputStream else (connection.errorStream ?: connection.inputStream)
         val text = BufferedReader(stream.reader(StandardCharsets.UTF_8)).use { it.readText() }
         if (code !in 200..299) {
             Log.e("ControlPlaneApi", "request failed: $code $text")

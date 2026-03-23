@@ -1,0 +1,2 @@
+{"nodeId":"client-node-1","relayToken":"replace-with-real-client-relay-token","relayUdp":"127.0.0.1:51820","role":"client","packets":100,"packetBytes":128}
+{"nodeId":"gateway-node-1","relayToken":"replace-with-real-gateway-relay-token","relayUdp":"127.0.0.1:51820","role":"gateway","packets":100,"packetBytes":128}

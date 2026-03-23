@@ -2,9 +2,12 @@ package com.brn.gateway.net
 
 import android.net.VpnService
 import android.util.Log
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -15,18 +18,27 @@ import java.net.InetSocketAddress
 import java.nio.charset.StandardCharsets
 import java.util.concurrent.ConcurrentHashMap
 
+data class SessionBridgeStatus(
+    val sessionId: String,
+    val localPort: Int,
+    val relayEndpoint: String
+)
+
 class RelayTransport(
     private val vpnService: VpnService,
     private val scope: CoroutineScope
 ) {
     private val sessionJobs = ConcurrentHashMap<String, Job>()
+    private val sessionPorts = ConcurrentHashMap<String, Int>()
 
-    fun ensureSession(nodeId: String, session: AssignedSession) {
+    fun ensureSession(nodeId: String, session: AssignedSession): SessionBridgeStatus {
+        val localPort = sessionPorts.computeIfAbsent(session.sessionId) { allocateLocalPort(session.sessionId) }
         sessionJobs.computeIfAbsent(session.sessionId) {
             scope.launch(Dispatchers.IO) {
-                runSessionLoop(nodeId, session)
+                runSessionLoop(nodeId, session, localPort)
             }
         }
+        return SessionBridgeStatus(session.sessionId, localPort, session.relay.udpEndpoint)
     }
 
     fun reconnectAll() {
@@ -36,31 +48,107 @@ class RelayTransport(
         sessionJobs.clear()
     }
 
+    fun pruneSessions(activeSessionIds: Set<String>) {
+        sessionJobs.entries
+            .filter { (sessionId, _) -> sessionId !in activeSessionIds }
+            .forEach { (sessionId, job) ->
+                job.cancel()
+                sessionJobs.remove(sessionId)
+                sessionPorts.remove(sessionId)
+            }
+    }
+
     fun stop() {
         reconnectAll()
     }
 
-    private suspend fun runSessionLoop(nodeId: String, session: AssignedSession) {
-        while (scope.isActive) {
-            runCatching {
+    fun activeSessionCount(): Int = sessionJobs.size
+
+    fun activeBridgeStatuses(): List<SessionBridgeStatus> = sessionPorts.entries.map { (sessionId, localPort) ->
+        SessionBridgeStatus(sessionId = sessionId, localPort = localPort, relayEndpoint = "reconnect-pending")
+    }
+
+    private suspend fun runSessionLoop(nodeId: String, session: AssignedSession, localPort: Int) {
+        while (currentCoroutineContext().isActive) {
+            var relaySocket: DatagramSocket? = null
+            var localSocket: DatagramSocket? = null
+            try {
                 val (host, port) = parseEndpoint(session.relay.udpEndpoint)
-                val socket = DatagramSocket().apply {
+                relaySocket = DatagramSocket().apply {
                     soTimeout = 10_000
                 }
-                vpnService.protect(socket)
+                vpnService.protect(relaySocket)
+                localSocket = DatagramSocket(null).apply {
+                    reuseAddress = true
+                    soTimeout = 2_000
+                    bind(InetSocketAddress("127.0.0.1", localPort))
+                }
 
                 val hello = buildHello(session.relayToken, nodeId)
                 val target = InetSocketAddress(host, port)
-                socket.send(DatagramPacket(hello, hello.size, target))
+                relaySocket.send(DatagramPacket(hello, hello.size, target))
+                Log.i("RelayTransport", "session ${session.sessionId} bridged on 127.0.0.1:$localPort")
 
-                while (scope.isActive && !socket.isClosed) {
-                    delay(20_000)
-                    socket.send(DatagramPacket(hello, hello.size, target))
+                var localEngineAddr: InetSocketAddress? = null
+                coroutineScope {
+                    launch {
+                        val buffer = ByteArray(64 * 1024)
+                        while (isActive) {
+                            runCatching {
+                                val packet = DatagramPacket(buffer, buffer.size)
+                                localSocket.receive(packet)
+                                localEngineAddr = packet.socketAddress as InetSocketAddress
+                                relaySocket.send(
+                                    DatagramPacket(
+                                        packet.data,
+                                        packet.length,
+                                        target
+                                    )
+                                )
+                            }.onFailure { error ->
+                                if (localSocket.isClosed || relaySocket.isClosed) return@launch
+                                if (!isTimeout(error)) throw error
+                            }
+                        }
+                    }
+
+                    launch {
+                        val buffer = ByteArray(64 * 1024)
+                        while (isActive) {
+                            runCatching {
+                                val packet = DatagramPacket(buffer, buffer.size)
+                                relaySocket.receive(packet)
+                                val engineAddr = localEngineAddr ?: return@runCatching
+                                localSocket.send(
+                                    DatagramPacket(
+                                        packet.data,
+                                        packet.length,
+                                        engineAddr
+                                    )
+                                )
+                            }.onFailure { error ->
+                                if (localSocket.isClosed || relaySocket.isClosed) return@launch
+                                if (!isTimeout(error)) throw error
+                            }
+                        }
+                    }
+
+                    launch {
+                        while (isActive) {
+                            delay(20_000)
+                            relaySocket.send(DatagramPacket(hello, hello.size, target))
+                        }
+                    }
                 }
-                socket.close()
-            }.onFailure { error ->
+            } catch (error: Throwable) {
+                if (error is CancellationException) {
+                    throw error
+                }
                 Log.w("RelayTransport", "session ${session.sessionId} failed: ${error.message}")
                 delay(5_000)
+            } finally {
+                relaySocket?.close()
+                localSocket?.close()
             }
         }
     }
@@ -85,5 +173,15 @@ class RelayTransport(
         val port = parts.last().toInt()
         val host = parts.dropLast(1).joinToString(":")
         return host to port
+    }
+
+    private fun allocateLocalPort(sessionId: String): Int {
+        val hash = sessionId.fold(0) { acc, ch -> (acc * 31) + ch.code }
+        val normalized = (hash and Int.MAX_VALUE) % 5000
+        return 42000 + normalized
+    }
+
+    private fun isTimeout(error: Throwable): Boolean {
+        return error is java.net.SocketTimeoutException
     }
 }

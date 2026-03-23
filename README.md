@@ -7,7 +7,7 @@ BRN is a mobile-powered bandwidth relay network that lets a remote client route 
 - `apps/control-plane`: Next.js + TypeScript + Prisma APIs for registration, sessions, heartbeats, and usage ingestion.
 - `services/relay`: Go relay that forwards encrypted UDP packets and framed TCP fallback traffic.
 - `clients/cli`: Go CLI that registers a client, requests a session, generates WireGuard config, and bridges a local UDP WireGuard endpoint to the relay.
-- `android/gateway`: Android app with `VpnService`, node registration, relay transport, and network monitoring scaffolding.
+- `android/gateway`: Android app with foreground service orchestration, embedded WireGuard backend integration, relay transport, and network monitoring.
 - `packages/contracts`: shared API types for the control plane.
 - `packages/go/brnproto`: shared Go token and relay framing helpers.
 - `infra/docker`: local Docker setup for Postgres, control plane, and relay.
@@ -36,8 +36,8 @@ Detailed architecture and protocol notes live in `docs/architecture.md` and `doc
 - The control plane signs node JWTs and short-lived relay session tokens.
 - The relay validates session tokens offline and never decrypts WireGuard packets.
 - The CLI writes WireGuard peer configuration and forwards local encrypted UDP packets to the relay.
-- The Android app is structured around a foreground `VpnService` with relay bridging and persistent heartbeats.
+- The Android app registers the gateway, maintains relay bridges, and brings up per-session embedded WireGuard tunnels against local relay bridge ports.
 
 ## Known implementation boundary
 
-The server and CLI are implemented end-to-end. The Android app includes the production service lifecycle, control-plane integration, and relay transport scaffolding, but still expects integration with a userspace WireGuard backend inside the app build to terminate the encrypted tunnel on-device.
+The server and CLI are implemented end-to-end. The Android app now includes embedded WireGuard session management, but a production-ready userspace packet-forwarding/NAT layer is still required for full exit-node behavior on non-root Android devices. That forwarding layer must accept decrypted packets from the tunnel side and open outbound mobile-network sockets on behalf of remote clients.

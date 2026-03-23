@@ -1,0 +1,362 @@
+openapi: 3.1.0
+info:
+  title: BRN Control Plane API
+  version: 0.1.0
+  description: Control-plane endpoints for node registration, heartbeats, session allocation, and usage ingestion.
+servers:
+  - url: http://localhost:3000/api
+paths:
+  /nodes/register:
+    post:
+      summary: Register a client or gateway node
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterNodeRequest'
+      responses:
+        '200':
+          description: Registration accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RegisterNodeResponse'
+  /nodes/heartbeat:
+    post:
+      summary: Update node health and retrieve assigned sessions for gateways
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/HeartbeatRequest'
+      responses:
+        '200':
+          description: Heartbeat processed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HeartbeatResponse'
+  /nodes/available:
+    get:
+      summary: List healthy gateway nodes
+      responses:
+        '200':
+          description: Healthy gateways
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  gateways:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AvailableGateway'
+  /sessions/start:
+    post:
+      summary: Start a client-to-gateway relay session
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SessionStartRequest'
+      responses:
+        '200':
+          description: Session created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionStartResponse'
+  /billing/usage:
+    post:
+      summary: Ingest signed relay usage aggregates
+      parameters:
+        - in: header
+          name: X-BRN-Relay-Signature
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BillingUsageRequest'
+      responses:
+        '200':
+          description: Usage recorded
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    RelayEndpoints:
+      type: object
+      properties:
+        udpEndpoint:
+          type: string
+        tcpEndpoint:
+          type: string
+      required:
+        - udpEndpoint
+        - tcpEndpoint
+    RegisterNodeRequest:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [GATEWAY, CLIENT]
+        identityPublicKey:
+          type: string
+        wireguardPublicKey:
+          type: string
+        fingerprintHash:
+          type: string
+        location:
+          type: string
+        capabilities:
+          type: object
+          additionalProperties: true
+        timestamp:
+          type: integer
+        nonce:
+          type: string
+        signature:
+          type: string
+      required:
+        - type
+        - identityPublicKey
+        - wireguardPublicKey
+        - fingerprintHash
+        - timestamp
+        - nonce
+        - signature
+    RegisterNodeResponse:
+      type: object
+      properties:
+        nodeId:
+          type: string
+        token:
+          type: string
+        heartbeatIntervalSec:
+          type: integer
+        relay:
+          $ref: '#/components/schemas/RelayEndpoints'
+      required:
+        - nodeId
+        - token
+        - heartbeatIntervalSec
+        - relay
+    HeartbeatRequest:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [ACTIVE, DEGRADED, OFFLINE]
+        activeSessions:
+          type: integer
+        relayHealthy:
+          type: boolean
+        batteryPercent:
+          type: integer
+          nullable: true
+        networkType:
+          type: string
+          nullable: true
+        currentPublicIp:
+          type: string
+          nullable: true
+        loadFactor:
+          type: integer
+        appVersion:
+          type: string
+          nullable: true
+      required:
+        - status
+        - activeSessions
+        - relayHealthy
+        - loadFactor
+    AssignedSession:
+      type: object
+      properties:
+        sessionId:
+          type: string
+        clientId:
+          type: string
+        clientWireguardPublicKey:
+          type: string
+        gatewayWireguardPublicKey:
+          type: string
+        clientTunnelIp:
+          type: string
+          nullable: true
+        gatewayTunnelIp:
+          type: string
+          nullable: true
+        relayToken:
+          type: string
+        transportMode:
+          type: string
+        routingMode:
+          type: string
+        requestedCidrs:
+          type: array
+          items:
+            type: string
+        requestedDomains:
+          type: array
+          items:
+            type: string
+        relay:
+          $ref: '#/components/schemas/RelayEndpoints'
+    HeartbeatResponse:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        serverTime:
+          type: string
+          format: date-time
+        heartbeatIntervalSec:
+          type: integer
+        blacklistVersion:
+          type: string
+        assignedSessions:
+          type: array
+          items:
+            $ref: '#/components/schemas/AssignedSession'
+    AvailableGateway:
+      type: object
+      properties:
+        id:
+          type: string
+        location:
+          type: string
+          nullable: true
+        networkType:
+          type: string
+          nullable: true
+        currentPublicIp:
+          type: string
+          nullable: true
+        loadFactor:
+          type: integer
+        capabilities:
+          type: object
+          nullable: true
+          additionalProperties: true
+        supportedTransports:
+          type: array
+          items:
+            type: string
+        heartbeatAgeSec:
+          type: integer
+          nullable: true
+    SessionStartRequest:
+      type: object
+      properties:
+        gatewayId:
+          type: string
+        routingMode:
+          type: string
+          enum: [FULL, SELECTIVE]
+        transportPreference:
+          type: string
+          enum: [UDP, TCP_FALLBACK, AUTO]
+        requestedCidrs:
+          type: array
+          items:
+            type: string
+        requestedDomains:
+          type: array
+          items:
+            type: string
+        dataCapMb:
+          type: integer
+      required:
+        - gatewayId
+        - routingMode
+        - transportPreference
+    SessionStartResponse:
+      type: object
+      properties:
+        sessionId:
+          type: string
+        relayToken:
+          type: string
+        relay:
+          $ref: '#/components/schemas/RelayEndpoints'
+        tunnel:
+          type: object
+          properties:
+            clientTunnelIp:
+              type: string
+            gatewayTunnelIp:
+              type: string
+            networkCidr:
+              type: string
+            dnsServers:
+              type: array
+              items:
+                type: string
+            keepaliveSec:
+              type: integer
+            mtu:
+              type: integer
+        peer:
+          type: object
+          properties:
+            wireguardPublicKey:
+              type: string
+        routingMode:
+          type: string
+        transportMode:
+          type: string
+        requestedCidrs:
+          type: array
+          items:
+            type: string
+        requestedDomains:
+          type: array
+          items:
+            type: string
+        dataCapMb:
+          type: integer
+        blacklistVersion:
+          type: string
+    BillingUsageRequest:
+      type: object
+      properties:
+        sessionId:
+          type: string
+        gatewayId:
+          type: string
+        clientId:
+          type: string
+        bytesUp:
+          type: integer
+        bytesDown:
+          type: integer
+        transportMode:
+          type: string
+        durationSec:
+          type: integer
+        terminationReason:
+          type: string
+      required:
+        - sessionId
+        - gatewayId
+        - clientId
+        - bytesUp
+        - bytesDown
+        - transportMode
+        - durationSec
+        - terminationReason

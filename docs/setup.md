@@ -34,5 +34,4 @@
 - Disable battery optimization for the gateway app.
 - Keep the device plugged in for long relay sessions.
 - Prefer stable 4G/5G coverage and allow the app to run as a foreground service.
-- Integrate a userspace WireGuard backend before production traffic is routed through the phone.
-
+- The app now includes an embedded WireGuard tunnel backend, but it still needs a userspace packet-forwarding/NAT layer before the phone can behave as a full production exit node for remote clients.

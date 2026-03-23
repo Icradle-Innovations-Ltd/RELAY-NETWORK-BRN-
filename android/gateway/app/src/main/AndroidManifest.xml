@@ -10,6 +10,7 @@
     <application
         android:allowBackup="false"
         android:label="BRN Gateway"
+        android:usesCleartextTraffic="true"
         android:supportsRtl="true">
         <activity
             android:name=".MainActivity"

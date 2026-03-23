@@ -5,12 +5,13 @@ import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Base64
 import com.brn.gateway.state.GatewayStateStore
+import com.wireguard.crypto.Key
+import com.wireguard.crypto.KeyPair
 import java.nio.charset.StandardCharsets
 import java.security.KeyPairGenerator
 import java.security.KeyStore
 import java.security.MessageDigest
 import java.security.Signature
-import java.security.spec.NamedParameterSpec
 
 class KeyManager(
     private val context: Context,
@@ -34,23 +35,23 @@ class KeyManager(
     fun ensureWireGuardMaterial(): Pair<String, String> {
         val existingPublic = stateStore.wireGuardPublicKey
         val existingPrivate = stateStore.wireGuardPrivateKey
-        if (existingPublic != null && existingPrivate != null) {
+        if (existingPublic != null && existingPrivate != null && isValidWireGuardKey(existingPrivate, existingPublic)) {
             return existingPrivate to existingPublic
         }
 
-        val keyPairGenerator = try {
-            KeyPairGenerator.getInstance("X25519")
-        } catch (_: Exception) {
-            KeyPairGenerator.getInstance("XDH")
-        }
-        keyPairGenerator.initialize(NamedParameterSpec("X25519"))
-        val keyPair = keyPairGenerator.generateKeyPair()
-
-        val privateEncoded = Base64.encodeToString(keyPair.private.encoded, Base64.NO_WRAP)
-        val publicEncoded = Base64.encodeToString(keyPair.public.encoded, Base64.NO_WRAP)
+        val keyPair = KeyPair()
+        val privateEncoded = keyPair.privateKey.toBase64()
+        val publicEncoded = keyPair.publicKey.toBase64()
         stateStore.wireGuardPrivateKey = privateEncoded
         stateStore.wireGuardPublicKey = publicEncoded
         return privateEncoded to publicEncoded
+    }
+
+    private fun isValidWireGuardKey(privateKey: String, publicKey: String): Boolean {
+        return runCatching {
+            Key.fromBase64(privateKey)
+            Key.fromBase64(publicKey)
+        }.isSuccess
     }
 
     fun deviceFingerprint(): String {

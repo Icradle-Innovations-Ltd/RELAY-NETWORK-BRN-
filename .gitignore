@@ -55,6 +55,7 @@ go.work.sum
 # Android / Gradle
 # ===========================
 .gradle/
+android/**/.gradle/
 android/**/build/
 android/gateway/local.properties
 *.apk
