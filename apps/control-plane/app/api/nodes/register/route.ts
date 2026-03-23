@@ -43,7 +43,25 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Registration nonce replayed" }, { status: 409 });
     }
 
+    // Debug: log the signing payload and verification details
+    const { registrationSigningPayload: buildPayload } = await import("@/lib/crypto");
+    const debugPayload = buildPayload({
+      type: body.type,
+      identityPublicKey: body.identityPublicKey,
+      wireguardPublicKey: body.wireguardPublicKey,
+      fingerprintHash: body.fingerprintHash,
+      location: body.location,
+      capabilities: body.capabilities,
+      timestamp: body.timestamp,
+      nonce: body.nonce
+    });
+    console.log("[DEBUG REGISTER] payload hex:", debugPayload.toString("hex"));
+    console.log("[DEBUG REGISTER] payload text:", debugPayload.toString("utf8"));
+    console.log("[DEBUG REGISTER] signature:", body.signature);
+    console.log("[DEBUG REGISTER] pubkey (first 80):", body.identityPublicKey.substring(0, 80));
+
     if (!verifyRegistrationSignature(body)) {
+      console.log("[DEBUG REGISTER] Signature verification FAILED");
       return NextResponse.json({ error: "Invalid registration signature" }, { status: 401 });
     }
 

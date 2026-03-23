@@ -84,10 +84,20 @@ class GatewayVpnService : VpnService() {
         networkMonitor.start()
         heartbeatJob?.cancel()
         heartbeatJob = serviceScope.launch {
-            ensureRegistration()
+            try {
+                ensureRegistration()
+                broadcastStatus("connected", "Gateway registered and active")
+            } catch (e: Exception) {
+                android.util.Log.w("GatewayVpnService", "registration failed: ${e.message}")
+                broadcastStatus("error", "Registration failed: ${e.message}")
+                delay(5_000)
+            }
             while (isActive) {
                 runCatching {
-                    val token = stateStore.token ?: return@runCatching
+                    val token = stateStore.token ?: run {
+                        ensureRegistration()
+                        return@runCatching
+                    }
                     val nodeId = stateStore.nodeId ?: return@runCatching
                     val heartbeat = api.heartbeat(
                         token = token,
@@ -102,6 +112,7 @@ class GatewayVpnService : VpnService() {
                     }
                     relayTransport.pruneSessions(activeSessionIds)
                     wireGuardEngine.pruneSessions(activeSessionIds)
+                    broadcastStatus("connected", "Active with ${relayTransport.activeSessionCount()} session(s)")
                     startForeground(
                         NOTIFICATION_ID,
                         foregroundNotification("Gateway active with ${relayTransport.activeSessionCount()} session(s)")
@@ -111,10 +122,19 @@ class GatewayVpnService : VpnService() {
                 }.onFailure { error ->
                     ensureActive()
                     android.util.Log.w("GatewayVpnService", "heartbeat loop error: ${error.message}")
+                    broadcastStatus("error", "Heartbeat failed: ${error.message}")
                     delay(5_000)
                 }
             }
         }
+    }
+
+    private fun broadcastStatus(state: String, detail: String) {
+        sendBroadcast(Intent("com.brn.gateway.STATUS_UPDATE").apply {
+            setPackage(packageName)
+            putExtra("state", state)
+            putExtra("detail", detail)
+        })
     }
 
     private suspend fun ensureRegistration() {

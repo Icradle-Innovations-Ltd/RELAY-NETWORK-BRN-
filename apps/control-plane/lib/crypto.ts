@@ -67,5 +67,9 @@ export function verifyRegistrationSignature(input: RegisterNodeInput): boolean {
 
   const publicKey = createPublicKey(publicKeySpec(input.identityPublicKey));
   const signature = Buffer.from(input.signature, "base64");
-  return verify(null, payload, publicKey, signature);
+  // Ed25519/Ed448 use null algorithm; EC (P-256) and RSA use sha256
+  const algorithm = publicKey.asymmetricKeyType === "ed25519" || publicKey.asymmetricKeyType === "ed448"
+    ? null
+    : "sha256";
+  return verify(algorithm, payload, publicKey, signature);
 }

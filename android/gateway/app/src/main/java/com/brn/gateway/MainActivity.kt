@@ -233,17 +233,25 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun onStopClicked() {
-        startService(Intent(this, GatewayVpnService::class.java).apply {
-            action = GatewayVpnService.ACTION_STOP
-        })
-        updateStatus("stopping", "Shutting down gateway...")
+        try {
+            startService(Intent(this, GatewayVpnService::class.java).apply {
+                action = GatewayVpnService.ACTION_STOP
+            })
+            updateStatus("stopping", "Shutting down gateway...")
+        } catch (e: Exception) {
+            updateStatus("error", "Failed to stop service: ${e.message}")
+        }
     }
 
     private fun startGatewayService() {
-        startService(Intent(this, GatewayVpnService::class.java).apply {
-            action = GatewayVpnService.ACTION_START
-        })
-        updateStatus("connecting", "Registering with control plane...")
+        try {
+            startService(Intent(this, GatewayVpnService::class.java).apply {
+                action = GatewayVpnService.ACTION_START
+            })
+            updateStatus("connecting", "Registering with control plane...")
+        } catch (e: Exception) {
+            updateStatus("error", "Failed to start service: ${e.message}")
+        }
     }
 
     private fun updateStatus(state: String, detail: String? = null) {
