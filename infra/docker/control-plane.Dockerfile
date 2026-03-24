@@ -28,4 +28,4 @@ WORKDIR /app/apps/control-plane
 ENV PORT=3000
 EXPOSE ${PORT}
 
-CMD ["sh", "-c", "corepack pnpm start -- -p ${PORT}"]
+CMD ["sh", "-c", "npx next start -p ${PORT}"]
