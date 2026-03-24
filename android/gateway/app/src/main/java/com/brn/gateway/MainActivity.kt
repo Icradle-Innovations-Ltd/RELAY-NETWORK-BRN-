@@ -1,9 +1,11 @@
 package com.brn.gateway
 
+import android.Manifest
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.pm.PackageManager
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
@@ -20,6 +22,7 @@ import android.widget.ScrollView
 import android.widget.Space
 import android.widget.TextView
 import androidx.activity.ComponentActivity
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import com.brn.gateway.service.GatewayVpnService
 
@@ -29,12 +32,40 @@ class MainActivity : ComponentActivity() {
     private lateinit var statusDetail: TextView
     private lateinit var startButton: Button
     private lateinit var stopButton: Button
+    private lateinit var wifiDirectButton: Button
+    private lateinit var stopWifiDirectButton: Button
+    private lateinit var wifiDirectInfoCard: LinearLayout
+    private lateinit var wifiDirectSsid: TextView
+    private lateinit var wifiDirectPass: TextView
+
+    private var pendingAction: String? = null
+
+    private val wifiPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { results ->
+        if (results.values.all { it }) {
+            onWifiDirectClicked()
+        }
+    }
 
     private val statusReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
-            val state = intent.getStringExtra("state") ?: return
-            val detail = intent.getStringExtra("detail")
-            runOnUiThread { updateStatus(state, detail) }
+            when (intent.action) {
+                "com.brn.gateway.STATUS_UPDATE" -> {
+                    val state = intent.getStringExtra("state") ?: return
+                    val detail = intent.getStringExtra("detail")
+                    runOnUiThread { updateStatus(state, detail) }
+                }
+                "com.brn.gateway.WIFI_DIRECT_INFO" -> {
+                    val ssid = intent.getStringExtra("networkName") ?: ""
+                    val pass = intent.getStringExtra("passphrase") ?: ""
+                    runOnUiThread {
+                        wifiDirectSsid.text = "Network: $ssid"
+                        wifiDirectPass.text = "Password: $pass"
+                        wifiDirectInfoCard.visibility = View.VISIBLE
+                    }
+                }
+            }
         }
     }
 
@@ -47,7 +78,10 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
-        val filter = IntentFilter("com.brn.gateway.STATUS_UPDATE")
+        val filter = IntentFilter().apply {
+            addAction("com.brn.gateway.STATUS_UPDATE")
+            addAction("com.brn.gateway.WIFI_DIRECT_INFO")
+        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             registerReceiver(statusReceiver, filter, RECEIVER_NOT_EXPORTED)
         } else {
@@ -64,7 +98,11 @@ class MainActivity : ComponentActivity() {
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode == REQUEST_PREPARE_VPN && resultCode == RESULT_OK) {
-            startGatewayService()
+            when (pendingAction) {
+                "wifi_direct" -> startWifiDirectService()
+                else -> startGatewayService()
+            }
+            pendingAction = null
         }
     }
 
@@ -210,6 +248,97 @@ class MainActivity : ComponentActivity() {
         container.addView(stopButton)
         container.addView(spacer(24))
 
+        // ── WiFi Direct section ──
+        container.addView(TextView(this).apply {
+            text = "Local Mode (WiFi Direct)"
+            setTextColor(color(R.color.brn_on_surface))
+            textSize = 16f
+            typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
+            gravity = Gravity.CENTER
+        })
+        container.addView(spacer(4))
+        container.addView(TextView(this).apply {
+            text = "Share internet directly — no server needed"
+            setTextColor(color(R.color.brn_on_surface_dim))
+            textSize = 13f
+            gravity = Gravity.CENTER
+        })
+        container.addView(spacer(12))
+
+        wifiDirectButton = Button(this).apply {
+            text = "Start WiFi Direct"
+            setTextColor(Color.WHITE)
+            textSize = 16f
+            typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
+            isAllCaps = false
+            background = buttonBackground(color(R.color.brn_accent), dp(12).toFloat())
+            setPadding(dp(24), dp(16), dp(24), dp(16))
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+            setOnClickListener { onWifiDirectClicked() }
+        }
+        container.addView(wifiDirectButton)
+        container.addView(spacer(12))
+
+        stopWifiDirectButton = Button(this).apply {
+            text = "Stop WiFi Direct"
+            setTextColor(Color.WHITE)
+            textSize = 16f
+            typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
+            isAllCaps = false
+            background = buttonBackground(color(R.color.brn_button_stop), dp(12).toFloat())
+            setPadding(dp(24), dp(16), dp(24), dp(16))
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+            isEnabled = false
+            alpha = 0.5f
+            setOnClickListener { onStopWifiDirectClicked() }
+        }
+        container.addView(stopWifiDirectButton)
+        container.addView(spacer(12))
+
+        // WiFi Direct info card (hidden until active)
+        wifiDirectInfoCard = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = cardBackground()
+            setPadding(dp(20), dp(16), dp(20), dp(16))
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+            visibility = View.GONE
+        }
+        wifiDirectInfoCard.addView(TextView(this).apply {
+            text = "Tell the client to connect to:"
+            setTextColor(color(R.color.brn_on_surface_dim))
+            textSize = 13f
+            gravity = Gravity.CENTER
+        })
+        wifiDirectInfoCard.addView(spacer(8))
+        wifiDirectSsid = TextView(this).apply {
+            text = ""
+            setTextColor(color(R.color.brn_on_surface))
+            textSize = 16f
+            typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
+            gravity = Gravity.CENTER
+        }
+        wifiDirectInfoCard.addView(wifiDirectSsid)
+        wifiDirectInfoCard.addView(spacer(4))
+        wifiDirectPass = TextView(this).apply {
+            text = ""
+            setTextColor(color(R.color.brn_accent))
+            textSize = 16f
+            typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
+            gravity = Gravity.CENTER
+        }
+        wifiDirectInfoCard.addView(wifiDirectPass)
+        container.addView(wifiDirectInfoCard)
+        container.addView(spacer(24))
+
         // ── Footer ──
         container.addView(TextView(this).apply {
             text = "Secured by BRN Relay Network"
@@ -224,11 +353,13 @@ class MainActivity : ComponentActivity() {
 
     @Suppress("DEPRECATION")
     private fun onStartClicked() {
+        pendingAction = "relay"
         val prepareIntent = VpnService.prepare(this)
         if (prepareIntent != null) {
             startActivityForResult(prepareIntent, REQUEST_PREPARE_VPN)
         } else {
             startGatewayService()
+            pendingAction = null
         }
     }
 
@@ -243,6 +374,52 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun onWifiDirectClicked() {
+        // Check runtime permissions for WiFi Direct
+        val perms = mutableListOf<String>()
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
+            != PackageManager.PERMISSION_GRANTED
+        ) {
+            perms.add(Manifest.permission.ACCESS_FINE_LOCATION)
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.NEARBY_WIFI_DEVICES)
+            != PackageManager.PERMISSION_GRANTED
+        ) {
+            perms.add(Manifest.permission.NEARBY_WIFI_DEVICES)
+        }
+        if (perms.isNotEmpty()) {
+            wifiPermissionLauncher.launch(perms.toTypedArray())
+            return
+        }
+
+        pendingAction = "wifi_direct"
+        val prepareIntent = VpnService.prepare(this)
+        if (prepareIntent != null) {
+            @Suppress("DEPRECATION")
+            startActivityForResult(prepareIntent, REQUEST_PREPARE_VPN)
+        } else {
+            startWifiDirectService()
+            pendingAction = null
+        }
+    }
+
+    private fun onStopWifiDirectClicked() {
+        try {
+            startService(Intent(this, GatewayVpnService::class.java).apply {
+                action = GatewayVpnService.ACTION_STOP_WIFI_DIRECT
+            })
+            wifiDirectInfoCard.visibility = View.GONE
+            wifiDirectButton.isEnabled = true
+            wifiDirectButton.alpha = 1f
+            stopWifiDirectButton.isEnabled = false
+            stopWifiDirectButton.alpha = 0.5f
+            updateStatus("disconnected", "WiFi Direct stopped")
+        } catch (e: Exception) {
+            updateStatus("error", "Failed to stop WiFi Direct: ${e.message}")
+        }
+    }
+
     private fun startGatewayService() {
         try {
             startService(Intent(this, GatewayVpnService::class.java).apply {
@@ -251,6 +428,21 @@ class MainActivity : ComponentActivity() {
             updateStatus("connecting", "Registering with control plane...")
         } catch (e: Exception) {
             updateStatus("error", "Failed to start service: ${e.message}")
+        }
+    }
+
+    private fun startWifiDirectService() {
+        try {
+            startService(Intent(this, GatewayVpnService::class.java).apply {
+                action = GatewayVpnService.ACTION_START_WIFI_DIRECT
+            })
+            wifiDirectButton.isEnabled = false
+            wifiDirectButton.alpha = 0.5f
+            stopWifiDirectButton.isEnabled = true
+            stopWifiDirectButton.alpha = 1f
+            updateStatus("wifi_direct_starting", "Creating WiFi Direct group...")
+        } catch (e: Exception) {
+            updateStatus("error", "Failed to start WiFi Direct: ${e.message}")
         }
     }
 
@@ -267,6 +459,14 @@ class MainActivity : ComponentActivity() {
             "stopping" -> Triple(
                 "Stopping...", color(R.color.brn_warning),
                 detail ?: "Shutting down..."
+            )
+            "wifi_direct_starting" -> Triple(
+                "WiFi Direct...", color(R.color.brn_accent),
+                detail ?: "Creating local group..."
+            )
+            "wifi_direct_ready" -> Triple(
+                "WiFi Direct Active", color(R.color.brn_success),
+                detail ?: "Waiting for peers to connect"
             )
             "error" -> Triple(
                 "Error", color(R.color.brn_error),

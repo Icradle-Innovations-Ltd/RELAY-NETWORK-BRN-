@@ -29,6 +29,48 @@ class ClientWireGuardEngine(
         }
     }
 
+    fun startDirect(
+        wireGuardPrivateKey: String,
+        clientTunnelIp: String,
+        gatewayWgPubKey: String,
+        gatewayDirectIp: String,
+        wireguardPort: Int,
+        mtu: Int,
+        dnsServers: List<String>,
+        keepaliveSec: Int
+    ) {
+        val dnsLine = if (dnsServers.isNotEmpty()) {
+            "DNS = ${dnsServers.joinToString(", ")}"
+        } else {
+            "DNS = 1.1.1.1, 8.8.8.8"
+        }
+
+        val configText = buildString {
+            appendLine("[Interface]")
+            appendLine("PrivateKey = $wireGuardPrivateKey")
+            appendLine("Address = $clientTunnelIp/32")
+            appendLine("MTU = $mtu")
+            appendLine(dnsLine)
+            appendLine("ExcludedApplications = $packageName")
+            appendLine()
+            appendLine("[Peer]")
+            appendLine("PublicKey = $gatewayWgPubKey")
+            appendLine("AllowedIPs = 0.0.0.0/0")
+            appendLine("Endpoint = $gatewayDirectIp:$wireguardPort")
+            appendLine("PersistentKeepalive = $keepaliveSec")
+        }
+
+        val config = Config.parse(ByteArrayInputStream(configText.toByteArray(StandardCharsets.UTF_8)))
+        val t = ManagedTunnel("brn-client-direct")
+        tunnel = t
+        try {
+            backend.setState(t, Tunnel.State.UP, config)
+            Log.i("ClientWireGuardEngine", "tunnel UP via WiFi Direct $gatewayDirectIp:$wireguardPort")
+        } catch (error: Exception) {
+            throw IllegalStateException("Unable to bring WireGuard tunnel up (WiFi Direct)", error)
+        }
+    }
+
     fun stop() {
         tunnel?.let { t ->
             runCatching {

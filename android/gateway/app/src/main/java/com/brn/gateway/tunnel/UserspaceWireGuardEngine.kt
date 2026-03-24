@@ -19,6 +19,7 @@ data class WireGuardSessionBinding(
 
 interface UserspaceWireGuardEngine {
     fun ensureSession(session: AssignedSession, localRelayPort: Int): WireGuardSessionBinding
+    fun ensureSessionDirect(session: AssignedSession, peerIp: String, peerPort: Int): WireGuardSessionBinding
     fun pruneSessions(activeSessionIds: Set<String>)
     fun shutdown()
 }
@@ -32,22 +33,28 @@ class GoBackendWireGuardEngine(
     private val tunnels = ConcurrentHashMap<String, ManagedTunnel>()
 
     override fun ensureSession(session: AssignedSession, localRelayPort: Int): WireGuardSessionBinding {
-        val config = buildConfig(session, localRelayPort)
+        val config = buildConfig(session, "127.0.0.1:$localRelayPort")
+        return bringUp(session, config, localRelayPort)
+    }
+
+    override fun ensureSessionDirect(session: AssignedSession, peerIp: String, peerPort: Int): WireGuardSessionBinding {
+        val config = buildConfig(session, "$peerIp:$peerPort")
+        return bringUp(session, config, peerPort)
+    }
+
+    private fun bringUp(session: AssignedSession, config: Config, port: Int): WireGuardSessionBinding {
         val tunnel = tunnels.computeIfAbsent(session.sessionId) { ManagedTunnel(session.sessionId) }
 
         try {
             backend.setState(tunnel, Tunnel.State.UP, config)
-            Log.i(
-                "GoBackendWireGuardEngine",
-                "session ${session.sessionId} active via WireGuard on relay port $localRelayPort"
-            )
+            Log.i("GoBackendWireGuardEngine", "session ${session.sessionId} active")
         } catch (error: Exception) {
             throw IllegalStateException("Unable to bring WireGuard session ${session.sessionId} up", error)
         }
 
         return WireGuardSessionBinding(
             sessionId = session.sessionId,
-            localRelayPort = localRelayPort,
+            localRelayPort = port,
             gatewayTunnelIp = session.gatewayTunnelIp,
             clientTunnelIp = session.clientTunnelIp
         )
@@ -70,7 +77,7 @@ class GoBackendWireGuardEngine(
             }
     }
 
-    private fun buildConfig(session: AssignedSession, localRelayPort: Int): Config {
+    private fun buildConfig(session: AssignedSession, endpoint: String): Config {
         val gatewayAddress = requireNotNull(session.gatewayTunnelIp) {
             "gatewayTunnelIp missing for session ${session.sessionId}"
         }
@@ -91,7 +98,7 @@ class GoBackendWireGuardEngine(
             appendLine("[Peer]")
             appendLine("PublicKey = $clientPublicKey")
             appendLine("AllowedIPs = $clientAddress")
-            appendLine("Endpoint = 127.0.0.1:$localRelayPort")
+            appendLine("Endpoint = $endpoint")
             appendLine("PersistentKeepalive = 25")
         }
 

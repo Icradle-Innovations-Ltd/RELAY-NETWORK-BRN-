@@ -7,16 +7,22 @@ import android.app.PendingIntent
 import android.content.Intent
 import android.net.VpnService
 import android.os.Build
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.brn.gateway.BuildConfig
 import com.brn.gateway.MainActivity
 import com.brn.gateway.crypto.KeyManager
+import com.brn.gateway.net.AssignedSession
 import com.brn.gateway.net.ControlPlaneApi
 import com.brn.gateway.net.NetworkMonitor
+import com.brn.gateway.net.RelayDescriptor
 import com.brn.gateway.net.RelayTransport
 import com.brn.gateway.state.GatewayStateStore
 import com.brn.gateway.tunnel.GoBackendWireGuardEngine
 import com.brn.gateway.tunnel.UserspaceWireGuardEngine
+import com.brn.gateway.wifi.LocalPeerInfo
+import com.brn.gateway.wifi.WifiDirectListener
+import com.brn.gateway.wifi.WifiDirectManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -36,14 +42,18 @@ class GatewayVpnService : VpnService() {
     private lateinit var networkMonitor: NetworkMonitor
     private lateinit var wireGuardEngine: UserspaceWireGuardEngine
     private var heartbeatJob: Job? = null
+    private var wifiDirectManager: WifiDirectManager? = null
+    private var localWireGuardEngine: GoBackendWireGuardEngine? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent?.action != ACTION_STOP && heartbeatJob?.isActive == true) {
-            return START_STICKY
-        }
         when (intent?.action) {
             ACTION_STOP -> stopSelf()
-            else -> startGateway()
+            ACTION_START_WIFI_DIRECT -> startWifiDirect()
+            ACTION_STOP_WIFI_DIRECT -> stopWifiDirect()
+            else -> {
+                if (heartbeatJob?.isActive == true) return START_STICKY
+                startGateway()
+            }
         }
         return START_STICKY
     }
@@ -51,6 +61,7 @@ class GatewayVpnService : VpnService() {
     override fun onDestroy() {
         broadcastStatus("disconnected", "Gateway stopped")
         heartbeatJob?.cancel()
+        stopWifiDirect()
         if (::relayTransport.isInitialized) {
             relayTransport.stop()
         }
@@ -172,9 +183,90 @@ class GatewayVpnService : VpnService() {
         }
     }
 
+    // ── WiFi Direct Mode ──
+
+    private fun startWifiDirect() {
+        createNotificationChannel()
+        startForeground(NOTIFICATION_ID, foregroundNotification("Starting WiFi Direct..."))
+
+        stateStore = GatewayStateStore(this)
+        keyManager = KeyManager(this, stateStore)
+        val (wgPrivateKey, wgPublicKey) = keyManager.ensureWireGuardMaterial()
+
+        localWireGuardEngine = GoBackendWireGuardEngine(
+            context = this,
+            packageName = packageName,
+            wireGuardPrivateKey = wgPrivateKey
+        )
+
+        wifiDirectManager = WifiDirectManager(
+            context = this,
+            gatewayWireguardPublicKey = wgPublicKey,
+            scope = serviceScope,
+            listener = object : WifiDirectListener {
+                override fun onGroupFormed(groupOwnerIp: String, networkName: String, passphrase: String) {
+                    broadcastStatus("wifi_direct_ready", "SSID: $networkName | Pass: $passphrase")
+                    broadcastWifiDirectInfo(networkName, passphrase, groupOwnerIp)
+                    startForeground(NOTIFICATION_ID, foregroundNotification("WiFi Direct: $networkName"))
+                }
+
+                override fun onGroupRemoved() {
+                    broadcastStatus("disconnected", "WiFi Direct stopped")
+                }
+
+                override fun onPeerConnected(peer: LocalPeerInfo) {
+                    Log.i("GatewayVpnService", "Local peer connected: ${peer.peerIp}")
+                    val session = AssignedSession(
+                        sessionId = "local-${peer.peerIp}",
+                        relayToken = "",
+                        relay = RelayDescriptor("", ""),
+                        clientTunnelIp = peer.tunnelIp,
+                        gatewayTunnelIp = "10.0.0.1",
+                        clientWireguardPublicKey = peer.wireguardPublicKey,
+                        gatewayWireguardPublicKey = null,
+                        transportMode = "WIFI_DIRECT",
+                        routingMode = "FULL"
+                    )
+                    // Direct WireGuard — endpoint is the peer's WiFi Direct IP
+                    localWireGuardEngine?.ensureSessionDirect(
+                        session, peer.peerIp, WifiDirectManager.WIREGUARD_PORT
+                    )
+                    val peerCount = wifiDirectManager?.getConnectedPeers()?.size ?: 0
+                    broadcastStatus("wifi_direct_ready", "WiFi Direct active ($peerCount peer(s))")
+                    startForeground(NOTIFICATION_ID, foregroundNotification("WiFi Direct: $peerCount peer(s)"))
+                }
+
+                override fun onError(message: String) {
+                    broadcastStatus("error", "WiFi Direct: $message")
+                }
+            }
+        )
+
+        wifiDirectManager?.createGroup()
+        broadcastStatus("connecting", "Creating WiFi Direct group...")
+    }
+
+    private fun broadcastWifiDirectInfo(networkName: String, passphrase: String, ownerIp: String) {
+        sendBroadcast(Intent("com.brn.gateway.WIFI_DIRECT_INFO").apply {
+            setPackage(packageName)
+            putExtra("networkName", networkName)
+            putExtra("passphrase", passphrase)
+            putExtra("ownerIp", ownerIp)
+        })
+    }
+
+    private fun stopWifiDirect() {
+        wifiDirectManager?.removeGroup()
+        wifiDirectManager = null
+        localWireGuardEngine?.shutdown()
+        localWireGuardEngine = null
+    }
+
     companion object {
         const val ACTION_START = "com.brn.gateway.START"
         const val ACTION_STOP = "com.brn.gateway.STOP"
+        const val ACTION_START_WIFI_DIRECT = "com.brn.gateway.START_WIFI_DIRECT"
+        const val ACTION_STOP_WIFI_DIRECT = "com.brn.gateway.STOP_WIFI_DIRECT"
         private const val CHANNEL_ID = "brn_gateway"
         private const val NOTIFICATION_ID = 1002
     }

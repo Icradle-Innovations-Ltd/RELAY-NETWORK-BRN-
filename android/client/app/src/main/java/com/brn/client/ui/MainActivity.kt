@@ -1,14 +1,17 @@
 package com.brn.client.ui
 
+import android.Manifest
 import android.app.Activity
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.pm.PackageManager
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.net.VpnService
+import android.net.wifi.p2p.WifiP2pDevice
 import android.os.Build
 import android.os.Bundle
 import android.util.TypedValue
@@ -31,6 +34,9 @@ import com.brn.client.net.ControlPlaneApi
 import com.brn.client.net.GatewayInfo
 import com.brn.client.service.ClientVpnService
 import com.brn.client.state.ClientStateStore
+import com.brn.client.wifi.WifiDirectDiscovery
+import com.brn.client.wifi.WifiDirectSession
+import com.brn.client.wifi.WifiDirectClientListener
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -53,6 +59,24 @@ class MainActivity : ComponentActivity() {
     private lateinit var loadingText: TextView
     private lateinit var disconnectButton: Button
     private lateinit var logoutButton: TextView
+
+    // WiFi Direct UI
+    private lateinit var wifiDirectScanButton: Button
+    private lateinit var wifiDirectPeerList: LinearLayout
+    private lateinit var wifiDirectStatus: TextView
+
+    private var wifiDirectDiscovery: WifiDirectDiscovery? = null
+    private var pendingWifiDirectSession: WifiDirectSession? = null
+
+    private val wifiPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { results ->
+        if (results.values.all { it }) {
+            startWifiDirectDiscovery()
+        } else {
+            Toast.makeText(this, "WiFi permissions needed for local connect", Toast.LENGTH_SHORT).show()
+        }
+    }
 
     private var gateways = emptyList<GatewayInfo>()
     private var selectedGatewayId: String? = null
@@ -117,6 +141,7 @@ class MainActivity : ComponentActivity() {
     override fun onPause() {
         super.onPause()
         unregisterReceiver(statusReceiver)
+        wifiDirectDiscovery?.unregisterReceiver()
     }
 
     private fun buildUI(): View {
@@ -266,6 +291,63 @@ class MainActivity : ComponentActivity() {
             setBackgroundColor(Color.TRANSPARENT)
             setOnClickListener { loadGateways() }
         })
+
+        // ── WiFi Direct Section ──
+        container.addView(spacer(32))
+        container.addView(View(this).apply {
+            setBackgroundColor(color(R.color.brn_divider))
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(1))
+        })
+        container.addView(spacer(24))
+
+        container.addView(TextView(this).apply {
+            text = "Local Connect (WiFi Direct)"
+            setTextColor(color(R.color.brn_on_background))
+            textSize = 18f
+            typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
+        })
+        container.addView(spacer(4))
+        container.addView(TextView(this).apply {
+            text = "Connect directly to a nearby gateway — no internet needed"
+            setTextColor(color(R.color.brn_on_surface_dim))
+            textSize = 13f
+        })
+        container.addView(spacer(12))
+
+        wifiDirectStatus = TextView(this).apply {
+            text = ""
+            setTextColor(color(R.color.brn_on_surface_dim))
+            textSize = 13f
+            gravity = Gravity.CENTER
+            visibility = View.GONE
+        }
+        container.addView(wifiDirectStatus)
+        container.addView(spacer(8))
+
+        wifiDirectScanButton = Button(this).apply {
+            text = "Scan for Local Gateways"
+            setTextColor(Color.WHITE)
+            textSize = 14f
+            typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
+            isAllCaps = false
+            background = GradientDrawable().apply {
+                setColor(color(R.color.brn_accent))
+                cornerRadius = dp(12).toFloat()
+            }
+            setPadding(dp(24), dp(14), dp(24), dp(14))
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+            setOnClickListener { onScanWifiDirectClicked() }
+        }
+        container.addView(wifiDirectScanButton)
+        container.addView(spacer(12))
+
+        wifiDirectPeerList = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+        }
+        container.addView(wifiDirectPeerList)
 
         root.addView(container)
         return root
@@ -441,6 +523,167 @@ class MainActivity : ComponentActivity() {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
         })
         finish()
+    }
+
+    // ── WiFi Direct ──
+
+    private fun onScanWifiDirectClicked() {
+        // Check permissions
+        val perms = mutableListOf<String>()
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
+            != PackageManager.PERMISSION_GRANTED
+        ) {
+            perms.add(Manifest.permission.ACCESS_FINE_LOCATION)
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.NEARBY_WIFI_DEVICES)
+            != PackageManager.PERMISSION_GRANTED
+        ) {
+            perms.add(Manifest.permission.NEARBY_WIFI_DEVICES)
+        }
+        if (perms.isNotEmpty()) {
+            wifiPermissionLauncher.launch(perms.toTypedArray())
+            return
+        }
+        startWifiDirectDiscovery()
+    }
+
+    private fun startWifiDirectDiscovery() {
+        wifiDirectPeerList.removeAllViews()
+        wifiDirectStatus.text = "Scanning for nearby gateways..."
+        wifiDirectStatus.visibility = View.VISIBLE
+        wifiDirectScanButton.isEnabled = false
+        wifiDirectScanButton.alpha = 0.5f
+
+        val (_, wgPubKey) = keyManager.ensureWireGuardMaterial()
+
+        wifiDirectDiscovery?.disconnect()
+        wifiDirectDiscovery = WifiDirectDiscovery(this, wgPubKey, scope, object : WifiDirectClientListener {
+            override fun onPeersFound(peers: List<WifiP2pDevice>) {
+                runOnUiThread {
+                    wifiDirectPeerList.removeAllViews()
+                    if (peers.isEmpty()) {
+                        wifiDirectStatus.text = "No gateways found. Try again."
+                        wifiDirectScanButton.isEnabled = true
+                        wifiDirectScanButton.alpha = 1f
+                    } else {
+                        wifiDirectStatus.text = "Found ${peers.size} device(s) — tap to connect"
+                        peers.forEach { device ->
+                            wifiDirectPeerList.addView(wifiDirectPeerRow(device))
+                        }
+                        wifiDirectScanButton.isEnabled = true
+                        wifiDirectScanButton.alpha = 1f
+                    }
+                }
+            }
+
+            override fun onConnectedToGroup(groupOwnerIp: String) {
+                runOnUiThread {
+                    wifiDirectStatus.text = "Connected to group, performing handshake..."
+                }
+            }
+
+            override fun onSessionReady(session: WifiDirectSession) {
+                runOnUiThread {
+                    wifiDirectStatus.text = "Handshake complete — starting VPN..."
+                    pendingWifiDirectSession = session
+                    val vpnIntent = VpnService.prepare(this@MainActivity)
+                    if (vpnIntent != null) {
+                        vpnPrepareWifiDirect.launch(vpnIntent)
+                    } else {
+                        startWifiDirectVpn(session)
+                    }
+                }
+            }
+
+            override fun onDisconnected() {
+                runOnUiThread {
+                    wifiDirectStatus.text = "WiFi Direct disconnected"
+                    wifiDirectScanButton.isEnabled = true
+                    wifiDirectScanButton.alpha = 1f
+                }
+            }
+
+            override fun onError(message: String) {
+                runOnUiThread {
+                    wifiDirectStatus.text = "Error: $message"
+                    wifiDirectScanButton.isEnabled = true
+                    wifiDirectScanButton.alpha = 1f
+                }
+            }
+        })
+
+        wifiDirectDiscovery?.registerReceiver()
+        wifiDirectDiscovery?.discoverPeers()
+    }
+
+    private val vpnPrepareWifiDirect = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            pendingWifiDirectSession?.let { startWifiDirectVpn(it) }
+        } else {
+            Toast.makeText(this, "VPN permission denied", Toast.LENGTH_SHORT).show()
+        }
+        pendingWifiDirectSession = null
+    }
+
+    private fun startWifiDirectVpn(session: WifiDirectSession) {
+        updateStatus("connecting")
+        val intent = Intent(this, ClientVpnService::class.java).apply {
+            action = ClientVpnService.ACTION_START_WIFI_DIRECT
+            putExtra("gatewayWgPubKey", session.gatewayWireguardPublicKey)
+            putExtra("gatewayTunnelIp", session.gatewayTunnelIp)
+            putExtra("clientTunnelIp", session.clientTunnelIp)
+            putExtra("gatewayDirectIp", session.gatewayDirectIp)
+            putExtra("wireguardPort", session.wireguardPort)
+            putExtra("mtu", session.mtu)
+            putExtra("dnsServers", session.gatewayTunnelIp)
+            putExtra("keepaliveSec", session.keepaliveSec)
+        }
+        startForegroundService(intent)
+    }
+
+    private fun wifiDirectPeerRow(device: WifiP2pDevice): View {
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            background = cardBackground()
+            setPadding(dp(16), dp(16), dp(16), dp(16))
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { bottomMargin = dp(8) }
+            setOnClickListener {
+                wifiDirectStatus.text = "Connecting to ${device.deviceName}..."
+                wifiDirectDiscovery?.connectToPeer(device)
+            }
+
+            val info = LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.VERTICAL
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            }
+            info.addView(TextView(this@MainActivity).apply {
+                text = device.deviceName.ifBlank { "BRN Gateway" }
+                setTextColor(color(R.color.brn_on_surface))
+                textSize = 15f
+                typeface = Typeface.DEFAULT_BOLD
+            })
+            info.addView(TextView(this@MainActivity).apply {
+                text = device.deviceAddress
+                setTextColor(color(R.color.brn_on_surface_dim))
+                textSize = 12f
+            })
+            addView(info)
+
+            addView(TextView(this@MainActivity).apply {
+                text = "📶"
+                textSize = 20f
+            })
+        }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        wifiDirectDiscovery?.disconnect()
     }
 
     // ── UI helpers ──

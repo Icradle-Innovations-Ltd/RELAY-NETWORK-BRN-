@@ -42,6 +42,18 @@ class ClientVpnService : VpnService() {
                 }
                 startVpn(gatewayId)
             }
+            ACTION_START_WIFI_DIRECT -> {
+                startVpnWifiDirect(
+                    gatewayWgPubKey = intent.getStringExtra("gatewayWgPubKey") ?: "",
+                    gatewayTunnelIp = intent.getStringExtra("gatewayTunnelIp") ?: "10.0.0.1",
+                    clientTunnelIp = intent.getStringExtra("clientTunnelIp") ?: "10.0.0.2",
+                    gatewayDirectIp = intent.getStringExtra("gatewayDirectIp") ?: "192.168.49.1",
+                    wireguardPort = intent.getIntExtra("wireguardPort", 51820),
+                    mtu = intent.getIntExtra("mtu", 1280),
+                    dnsServers = intent.getStringExtra("dnsServers") ?: "1.1.1.1,8.8.8.8",
+                    keepaliveSec = intent.getIntExtra("keepaliveSec", 25)
+                )
+            }
         }
         return START_STICKY
     }
@@ -135,6 +147,56 @@ class ClientVpnService : VpnService() {
         })
     }
 
+    private fun startVpnWifiDirect(
+        gatewayWgPubKey: String,
+        gatewayTunnelIp: String,
+        clientTunnelIp: String,
+        gatewayDirectIp: String,
+        wireguardPort: Int,
+        mtu: Int,
+        dnsServers: String,
+        keepaliveSec: Int
+    ) {
+        createNotificationChannel()
+        startForeground(NOTIFICATION_ID, foregroundNotification("WiFi Direct connecting..."))
+
+        stateStore = ClientStateStore(this)
+        keyManager = ClientKeyManager(this, stateStore)
+        val (wireGuardPrivateKey, _) = keyManager.ensureWireGuardMaterial()
+        wireGuardEngine = ClientWireGuardEngine(this, packageName, wireGuardPrivateKey)
+
+        serviceScope.launch {
+            try {
+                broadcastStatus("connecting", "Setting up WiFi Direct tunnel...")
+
+                val dnsList = dnsServers.split(",").map { it.trim() }
+                wireGuardEngine.startDirect(
+                    wireGuardPrivateKey = wireGuardPrivateKey,
+                    clientTunnelIp = clientTunnelIp,
+                    gatewayWgPubKey = gatewayWgPubKey,
+                    gatewayDirectIp = gatewayDirectIp,
+                    wireguardPort = wireguardPort,
+                    mtu = mtu,
+                    dnsServers = dnsList,
+                    keepaliveSec = keepaliveSec
+                )
+
+                broadcastStatus("connected", "VPN active via WiFi Direct")
+                startForeground(NOTIFICATION_ID, foregroundNotification("VPN connected (WiFi Direct)"))
+
+                val info = "$clientTunnelIp \u2194 $gatewayTunnelIp (WiFi Direct)"
+                sendBroadcast(Intent(ACTION_SESSION_INFO).apply {
+                    setPackage(packageName)
+                    putExtra("info", info)
+                })
+            } catch (e: Exception) {
+                Log.e("ClientVpnService", "WiFi Direct VPN failed: ${e.message}", e)
+                broadcastStatus("error", e.message ?: "WiFi Direct VPN failed")
+                stopSelf()
+            }
+        }
+    }
+
     private fun foregroundNotification(content: String): Notification {
         val intent = PendingIntent.getActivity(
             this, 0, Intent(this, MainActivity::class.java),
@@ -160,6 +222,7 @@ class ClientVpnService : VpnService() {
     companion object {
         const val ACTION_START = "com.brn.client.START"
         const val ACTION_STOP = "com.brn.client.STOP"
+        const val ACTION_START_WIFI_DIRECT = "com.brn.client.START_WIFI_DIRECT"
         const val EXTRA_GATEWAY_ID = "gateway_id"
         const val ACTION_STATUS_UPDATE = "com.brn.client.STATUS_UPDATE"
         const val ACTION_SESSION_INFO = "com.brn.client.SESSION_INFO"
