@@ -87,3 +87,9 @@ apps/control-plane/prisma/dev.db-journal
 coverage/
 *.log
 .cache/
+
+# ===========================
+# Runtime / Generated
+# ===========================
+.brn-client.json
+client.conf
