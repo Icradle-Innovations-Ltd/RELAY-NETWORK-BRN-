@@ -9,6 +9,7 @@ WORKDIR /src/services/relay
 RUN go build -o /out/brn-relay .
 
 FROM debian:bookworm-slim
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/*
 RUN useradd -r -s /usr/sbin/nologin brn
 COPY --from=builder /out/brn-relay /usr/local/bin/brn-relay
 USER brn

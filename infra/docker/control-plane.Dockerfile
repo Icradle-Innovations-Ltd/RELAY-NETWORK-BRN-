@@ -12,5 +12,10 @@ RUN corepack pnpm --dir apps/control-plane prisma generate
 RUN corepack pnpm --dir apps/control-plane build
 
 WORKDIR /app/apps/control-plane
-EXPOSE 3000
-CMD ["corepack", "pnpm", "start"]
+
+# Railway injects PORT; Next.js defaults to 3000
+ENV PORT=3000
+EXPOSE ${PORT}
+
+# Run migrations then start — safe for Railway (single replica)
+CMD ["sh", "-c", "corepack pnpm prisma migrate deploy && corepack pnpm start -- -p ${PORT}"]
