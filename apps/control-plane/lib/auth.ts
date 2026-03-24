@@ -10,6 +10,13 @@ export interface NodeJwtClaims {
   iat: number;
 }
 
+export interface UserJwtClaims {
+  sub: string;
+  email: string;
+  exp: number;
+  iat: number;
+}
+
 export function createNodeJwt(nodeId: string, type: NodeType): string {
   const iat = Math.floor(Date.now() / 1000);
   return signJwt<NodeJwtClaims>(
@@ -25,6 +32,23 @@ export function createNodeJwt(nodeId: string, type: NodeType): string {
 
 export function verifyNodeJwt(token: string): NodeJwtClaims {
   return verifyJwt<NodeJwtClaims>(token, env.BRN_JWT_SECRET);
+}
+
+export function createUserJwt(userId: string, email: string): string {
+  const iat = Math.floor(Date.now() / 1000);
+  return signJwt<UserJwtClaims>(
+    {
+      sub: userId,
+      email,
+      iat,
+      exp: iat + 60 * 60 * 24 * 7
+    },
+    env.BRN_JWT_SECRET
+  );
+}
+
+export function verifyUserJwt(token: string): UserJwtClaims {
+  return verifyJwt<UserJwtClaims>(token, env.BRN_JWT_SECRET);
 }
 
 export function extractBearerToken(request: Request): string {

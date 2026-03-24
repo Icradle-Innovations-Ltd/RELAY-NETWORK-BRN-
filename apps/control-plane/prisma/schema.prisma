@@ -38,6 +38,16 @@ enum TransportMode {
   AUTO
 }
 
+model User {
+  id            String   @id @default(cuid())
+  email         String   @unique
+  passwordHash  String
+  emailVerified Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  nodes         Node[]
+}
+
 model Node {
   id                   String          @id @default(cuid())
   type                 NodeType
@@ -53,12 +63,16 @@ model Node {
   networkType          String?
   loadFactor           Int             @default(0)
   capabilities         Json?
+  userId               String?
+  user                 User?           @relation(fields: [userId], references: [id])
   createdAt            DateTime        @default(now())
   updatedAt            DateTime        @updatedAt
   clientSessions       Session[]       @relation("ClientSessions")
   gatewaySessions      Session[]       @relation("GatewaySessions")
   usage                Usage[]
   paymentAccounts      PaymentAccount[]
+
+  @@index([userId])
 }
 
 model Session {

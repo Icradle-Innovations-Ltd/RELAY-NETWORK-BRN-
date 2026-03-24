@@ -1,0 +1,3 @@
+{$BRN_DOMAIN} {
+	reverse_proxy control-plane:3000
+}

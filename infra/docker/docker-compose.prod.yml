@@ -1,0 +1,83 @@
+## ─────────────────────────────────────────────────────
+## BRN Production Docker Compose
+## Includes Caddy reverse-proxy for automatic TLS
+## ─────────────────────────────────────────────────────
+## Usage:
+##   cp infra/docker/.env.production.example infra/docker/.env.production
+##   # Edit .env.production with real values
+##   docker compose -f infra/docker/docker-compose.prod.yml --env-file infra/docker/.env.production up -d
+
+services:
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"   # HTTP/3
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - control-plane
+    environment:
+      BRN_DOMAIN: ${BRN_DOMAIN:?Set BRN_DOMAIN in .env.production}
+
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: brn
+      POSTGRES_USER: ${POSTGRES_USER:-brn}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    # No host port binding in production — only exposed to internal network
+
+  control-plane:
+    build:
+      context: ../..
+      dockerfile: infra/docker/control-plane.Dockerfile
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-brn}:${POSTGRES_PASSWORD}@postgres:5432/brn
+      BRN_JWT_SECRET: ${BRN_JWT_SECRET:?Set BRN_JWT_SECRET (min 32 chars)}
+      BRN_SESSION_SECRET: ${BRN_SESSION_SECRET:?Set BRN_SESSION_SECRET (min 32 chars)}
+      BRN_RELAY_USAGE_SECRET: ${BRN_RELAY_USAGE_SECRET:?Set BRN_RELAY_USAGE_SECRET (min 32 chars)}
+      RELAY_UDP_ENDPOINT: ${BRN_DOMAIN}:51820
+      RELAY_TCP_ENDPOINT: ${BRN_DOMAIN}:8443
+      NODE_HEARTBEAT_INTERVAL_SEC: 30
+      NODE_STALE_AFTER_SEC: 90
+      DEFAULT_SESSION_CAP_MB: 1024
+      MAX_SESSION_CAP_MB: 2048
+      BLACKLIST_VERSION: "1"
+    depends_on:
+      - postgres
+    # Only exposed through Caddy — no host port
+
+  relay:
+    build:
+      context: ../..
+      dockerfile: infra/docker/relay.Dockerfile
+    restart: unless-stopped
+    environment:
+      BRN_SESSION_SECRET: ${BRN_SESSION_SECRET}
+      BRN_RELAY_USAGE_SECRET: ${BRN_RELAY_USAGE_SECRET}
+      BRN_CONTROL_PLANE_USAGE_URL: http://control-plane:3000/api/billing/usage
+      BRN_RELAY_BIND_UDP: :51820
+      BRN_RELAY_BIND_TCP: :8443
+      BRN_RELAY_METRICS_ADDR: :9090
+      BRN_RELAY_IDLE_TIMEOUT_SEC: 90
+    depends_on:
+      - control-plane
+    ports:
+      - "51820:51820/udp"
+      - "8443:8443"
+      # Metrics only on localhost for security
+      - "127.0.0.1:9090:9090"
+
+volumes:
+  postgres-data:
+  caddy-data:
+  caddy-config:

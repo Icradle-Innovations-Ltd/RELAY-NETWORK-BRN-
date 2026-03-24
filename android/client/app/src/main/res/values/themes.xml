@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.BrnClient" parent="android:Theme.Material.NoActionBar">
+        <item name="android:colorPrimary">@color/brn_primary</item>
+        <item name="android:colorPrimaryDark">@color/brn_status_bar</item>
+        <item name="android:colorAccent">@color/brn_accent</item>
+        <item name="android:windowBackground">@color/brn_background</item>
+        <item name="android:statusBarColor">@color/brn_status_bar</item>
+        <item name="android:navigationBarColor">@color/brn_background</item>
+        <item name="android:windowLightStatusBar">false</item>
+    </style>
+</resources>

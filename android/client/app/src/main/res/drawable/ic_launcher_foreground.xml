@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- BRN Client launcher icon foreground: shield with arrow symbol -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Shield outline -->
+    <path
+        android:fillColor="#45CAFF"
+        android:pathData="M54,22 L26,34 L26,54 C26,70.6 38.2,86.1 54,90 C69.8,86.1 82,70.6 82,54 L82,34 Z"/>
+    <!-- Shield inner -->
+    <path
+        android:fillColor="#0D1117"
+        android:pathData="M54,26 L30,36.8 L30,54 C30,68.4 40.6,82.3 54,86 C67.4,82.3 78,68.4 78,54 L78,36.8 Z"/>
+    <!-- Arrow up (connect/upload symbol) -->
+    <path
+        android:fillColor="#45CAFF"
+        android:pathData="M54,40 L44,55 L50,55 L50,68 L58,68 L58,55 L64,55 Z"/>
+</vector>
