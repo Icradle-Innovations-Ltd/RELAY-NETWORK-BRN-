@@ -120,20 +120,18 @@ class ClientVpnService : VpnService() {
     }
 
     private fun broadcastStatus(state: String, detail: String) {
-        sendBroadcast(Intent(STATUS_ACTION).apply {
+        sendBroadcast(Intent(ACTION_STATUS_UPDATE).apply {
             setPackage(packageName)
-            putExtra("state", state)
+            putExtra("status", state)
             putExtra("detail", detail)
         })
     }
 
     private fun broadcastSession(session: SessionResult) {
-        sendBroadcast(Intent(SESSION_ACTION).apply {
+        val info = "${session.clientTunnelIp} \u2194 ${session.gatewayTunnelIp} (${session.dataCapMb} MB cap)"
+        sendBroadcast(Intent(ACTION_SESSION_INFO).apply {
             setPackage(packageName)
-            putExtra("sessionId", session.sessionId)
-            putExtra("clientTunnelIp", session.clientTunnelIp)
-            putExtra("gatewayTunnelIp", session.gatewayTunnelIp)
-            putExtra("dataCapMb", session.dataCapMb)
+            putExtra("info", info)
         })
     }
 
@@ -163,8 +161,8 @@ class ClientVpnService : VpnService() {
         const val ACTION_START = "com.brn.client.START"
         const val ACTION_STOP = "com.brn.client.STOP"
         const val EXTRA_GATEWAY_ID = "gateway_id"
-        const val STATUS_ACTION = "com.brn.client.STATUS_UPDATE"
-        const val SESSION_ACTION = "com.brn.client.SESSION_INFO"
+        const val ACTION_STATUS_UPDATE = "com.brn.client.STATUS_UPDATE"
+        const val ACTION_SESSION_INFO = "com.brn.client.SESSION_INFO"
         private const val CHANNEL_ID = "brn_client_vpn"
         private const val NOTIFICATION_ID = 2001
     }

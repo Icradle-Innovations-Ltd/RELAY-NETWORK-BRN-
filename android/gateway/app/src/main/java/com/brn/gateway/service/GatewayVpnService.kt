@@ -49,6 +49,7 @@ class GatewayVpnService : VpnService() {
     }
 
     override fun onDestroy() {
+        broadcastStatus("disconnected", "Gateway stopped")
         heartbeatJob?.cancel()
         if (::relayTransport.isInitialized) {
             relayTransport.stop()

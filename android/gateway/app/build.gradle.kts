@@ -13,7 +13,7 @@ android {
         targetSdk = 35
         versionCode = 1
         versionName = "0.1.0"
-        buildConfigField("String", "CONTROL_PLANE_BASE_URL", "\"http://10.0.2.2:3000/api\"")
+        buildConfigField("String", "CONTROL_PLANE_BASE_URL", "\"https://relay.healthlinks.ug/api\"")
     }
 
     buildTypes {

@@ -93,7 +93,7 @@ class ControlPlaneApi(private val baseUrl: String) {
 
     fun listGateways(nodeToken: String): List<GatewayInfo> {
         val response = jsonRequest("GET", "$baseUrl/nodes/available", null, nodeToken)
-        val nodes = response.getJSONArray("nodes")
+        val nodes = response.getJSONArray("gateways")
         val result = mutableListOf<GatewayInfo>()
         for (i in 0 until nodes.length()) {
             val node = nodes.getJSONObject(i)

@@ -86,7 +86,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         stateStore = ClientStateStore(this)
         api = ControlPlaneApi(BuildConfig.CONTROL_PLANE_BASE_URL)
-        keyManager = ClientKeyManager(this)
+        keyManager = ClientKeyManager(this, stateStore)
 
         if (!stateStore.isLoggedIn) {
             startActivity(Intent(this, LoginActivity::class.java))
@@ -279,23 +279,21 @@ class MainActivity : ComponentActivity() {
 
         scope.launch {
             try {
-                val pubKey = withContext(Dispatchers.IO) { keyManager.getIdentityPublicKeyBase64() }
-                val wgKeys = keyManager.getOrCreateWireGuardKeys()
-                val fingerprint = keyManager.getDeviceFingerprintHash()
-                stateStore.wireGuardPublicKey = wgKeys.first
-                stateStore.wireGuardPrivateKey = wgKeys.second
+                val pubKey = withContext(Dispatchers.IO) { keyManager.identityPublicKeyPem() }
+                val (_, wireGuardPublicKey) = keyManager.ensureWireGuardMaterial()
+                val fingerprint = keyManager.deviceFingerprint()
                 stateStore.fingerprintHash = fingerprint
 
                 val result = withContext(Dispatchers.IO) {
                     api.registerClient(
                         userToken = stateStore.userToken!!,
                         identityPublicKey = pubKey,
-                        wireguardPublicKey = wgKeys.first,
+                        wireguardPublicKey = wireGuardPublicKey,
                         fingerprintHash = fingerprint
                     )
                 }
                 stateStore.nodeId = result.nodeId
-                stateStore.nodeToken = result.nodeToken
+                stateStore.nodeToken = result.token
                 loadGateways()
             } catch (e: Exception) {
                 Toast.makeText(this@MainActivity, "Registration failed: ${e.message}", Toast.LENGTH_LONG).show()
@@ -344,13 +342,13 @@ class MainActivity : ComponentActivity() {
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         }
         info.addView(TextView(this).apply {
-            text = gw.label ?: gw.nodeId.take(12)
+            text = gw.location ?: gw.id.take(12)
             setTextColor(color(R.color.brn_on_surface))
             textSize = 15f
             typeface = Typeface.DEFAULT_BOLD
         })
         info.addView(TextView(this).apply {
-            text = "ID: ${gw.nodeId.take(16)}..."
+            text = "ID: ${gw.id.take(16)}..."
             setTextColor(color(R.color.brn_on_surface_dim))
             textSize = 12f
         })
@@ -360,7 +358,7 @@ class MainActivity : ComponentActivity() {
         row.addView(View(this).apply {
             background = GradientDrawable().apply {
                 shape = GradientDrawable.OVAL
-                setColor(color(R.color.brn_connected))
+                setColor(color(R.color.brn_success))
             }
             layoutParams = LinearLayout.LayoutParams(dp(10), dp(10))
         })
@@ -373,12 +371,12 @@ class MainActivity : ComponentActivity() {
             Toast.makeText(this, "Disconnect first", Toast.LENGTH_SHORT).show()
             return
         }
-        selectedGatewayId = gw.nodeId
+        selectedGatewayId = gw.id
         val vpnIntent = VpnService.prepare(this)
         if (vpnIntent != null) {
             vpnPrepare.launch(vpnIntent)
         } else {
-            startVpn(gw.nodeId)
+            startVpn(gw.id)
         }
     }
 
@@ -405,7 +403,7 @@ class MainActivity : ComponentActivity() {
                 isConnected = true
                 statusIcon.text = "🟢"
                 statusLabel.text = "Connected"
-                statusLabel.setTextColor(color(R.color.brn_connected))
+                statusLabel.setTextColor(color(R.color.brn_success))
                 statusDetail.text = "VPN tunnel active"
                 disconnectButton.visibility = View.VISIBLE
             }
