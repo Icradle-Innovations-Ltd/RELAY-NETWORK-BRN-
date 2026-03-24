@@ -17,5 +17,4 @@ WORKDIR /app/apps/control-plane
 ENV PORT=3000
 EXPOSE ${PORT}
 
-# Run migrations then start — safe for Railway (single replica)
-CMD ["sh", "-c", "corepack pnpm prisma migrate deploy && corepack pnpm start -- -p ${PORT}"]
+CMD ["sh", "-c", "corepack pnpm start -- -p ${PORT}"]

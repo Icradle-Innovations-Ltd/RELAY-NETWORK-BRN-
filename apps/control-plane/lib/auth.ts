@@ -5,7 +5,7 @@ import { signJwt, verifyJwt } from "./jwt";
 
 export interface NodeJwtClaims {
   sub: string;
-  type: NodeType;
+  type: string;
   exp: number;
   iat: number;
 }

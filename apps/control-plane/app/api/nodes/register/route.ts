@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import type { Prisma } from "@prisma/client";
 
 import { createNodeJwt } from "@/lib/auth";
 import { verifyRegistrationSignature } from "@/lib/crypto";
@@ -55,7 +56,7 @@ export async function POST(request: Request) {
         wireguardPublicKey: body.wireguardPublicKey,
         fingerprintHash: body.fingerprintHash,
         location: body.location,
-        capabilities: body.capabilities ?? {},
+        capabilities: (body.capabilities ?? {}) as Prisma.InputJsonValue,
         status: "ACTIVE",
         ipAddress: ip,
         currentPublicIp: ip,
@@ -67,7 +68,7 @@ export async function POST(request: Request) {
         wireguardPublicKey: body.wireguardPublicKey,
         fingerprintHash: body.fingerprintHash,
         location: body.location,
-        capabilities: body.capabilities ?? {},
+        capabilities: (body.capabilities ?? {}) as Prisma.InputJsonValue,
         status: "ACTIVE",
         ipAddress: ip,
         currentPublicIp: ip,

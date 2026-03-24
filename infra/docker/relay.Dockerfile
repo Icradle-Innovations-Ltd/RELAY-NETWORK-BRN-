@@ -1,9 +1,11 @@
 FROM golang:1.25.3-bookworm AS builder
 
 WORKDIR /src
-COPY go.work ./
 COPY packages/go/brnproto ./packages/go/brnproto
 COPY services/relay ./services/relay
+
+# Create a minimal go.work with only the modules needed for the relay
+RUN printf 'go 1.25.3\n\nuse (\n\t./packages/go/brnproto\n\t./services/relay\n)\n' > go.work
 
 WORKDIR /src/services/relay
 RUN go build -o /out/brn-relay .

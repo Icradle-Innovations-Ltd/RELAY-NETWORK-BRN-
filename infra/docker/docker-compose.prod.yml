@@ -33,6 +33,11 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
     volumes:
       - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-brn} -d brn"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
     # No host port binding in production — only exposed to internal network
 
   control-plane:
@@ -53,7 +58,8 @@ services:
       MAX_SESSION_CAP_MB: 2048
       BLACKLIST_VERSION: "1"
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
     # Only exposed through Caddy — no host port
 
   relay:

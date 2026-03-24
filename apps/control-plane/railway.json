@@ -8,6 +8,7 @@
     ]
   },
   "deploy": {
+    "startCommand": "corepack pnpm prisma migrate deploy && corepack pnpm start -- -p ${PORT}",
     "healthcheckPath": "/api/health",
     "healthcheckTimeout": 30,
     "restartPolicyType": "ON_FAILURE",

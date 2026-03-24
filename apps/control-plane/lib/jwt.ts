@@ -16,7 +16,7 @@ function decodeBase64Url(input: string): Buffer {
   return Buffer.from(padded, "base64");
 }
 
-export function signJwt<T extends Record<string, JsonValue>>(payload: T, secret: string): string {
+export function signJwt<T>(payload: T, secret: string): string {
   const encodedHeader = encodeBase64Url(JSON.stringify({ alg: "HS256", typ: "JWT" }));
   const encodedPayload = encodeBase64Url(JSON.stringify(payload));
   const signingInput = `${encodedHeader}.${encodedPayload}`;
@@ -24,7 +24,7 @@ export function signJwt<T extends Record<string, JsonValue>>(payload: T, secret:
   return `${signingInput}.${encodeBase64Url(signature)}`;
 }
 
-export function verifyJwt<T extends Record<string, JsonValue>>(token: string, secret: string): T {
+export function verifyJwt<T>(token: string, secret: string): T {
   const segments = token.split(".");
   if (segments.length !== 3) {
     throw new Error("Malformed token");
@@ -38,10 +38,10 @@ export function verifyJwt<T extends Record<string, JsonValue>>(token: string, se
     throw new Error("Invalid token signature");
   }
 
-  const payload = JSON.parse(decodeBase64Url(encodedPayload).toString("utf8")) as T;
-  if (typeof payload.exp === "number" && payload.exp < Math.floor(Date.now() / 1000)) {
+  const raw = JSON.parse(decodeBase64Url(encodedPayload).toString("utf8")) as Record<string, unknown>;
+  if (typeof raw.exp === "number" && raw.exp < Math.floor(Date.now() / 1000)) {
     throw new Error("Token expired");
   }
 
-  return payload;
+  return raw as T;
 }
