@@ -134,6 +134,12 @@ class GatewayVpnService : VpnService() {
                 }.onFailure { error ->
                     ensureActive()
                     android.util.Log.w("GatewayVpnService", "heartbeat loop error: ${error.message}")
+                    // If token expired (401), clear it so we re-register on next iteration
+                    if (error.message?.contains("401") == true) {
+                        android.util.Log.i("GatewayVpnService", "Token expired, will re-register")
+                        stateStore.token = null
+                        stateStore.nodeId = null
+                    }
                     broadcastStatus("error", "Heartbeat failed: ${error.message}")
                     delay(5_000)
                 }
